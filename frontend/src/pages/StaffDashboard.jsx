@@ -264,7 +264,7 @@ function StaffReportSection({ patientId }) {
                         {grouped[activeFolder]?.length === 0
                             ? <p className="text-white/20 text-sm text-center py-3">No files yet</p>
                             : grouped[activeFolder].map(r => (
-                                <a key={r.id} href={`http://127.0.0.1:8000/uploads/${r.file_path}`}
+                                <a key={r.id} href={`${import.meta.env.VITE_API_URL}/uploads/${r.file_path}`}
                                     target="_blank" rel="noreferrer"
                                     className="flex items-center gap-3 bg-white/5 hover:bg-white/10 rounded-xl px-4 py-2.5 transition-all group">
                                     <span>{r.file_name.endsWith('.pdf') ? '📄' : '🖼️'}</span>
