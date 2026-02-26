@@ -1,7 +1,6 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 
@@ -9,9 +8,9 @@ from app.database import get_db
 from app.models import User
 from app.schemas import UserCreate, UserOut
 from app.dependencies import require_admin, get_current_user
+from app.routers.auth import pwd_ctx
 
 router = APIRouter(prefix="/users", tags=["Users"])
-pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 @router.get("/", response_model=List[UserOut])
@@ -34,11 +33,22 @@ async def create_user(
     if payload.role not in ("admin", "doctor", "staff"):
         raise HTTPException(status_code=400, detail="Invalid role")
 
+    # Secure byte length validation and type safety exclusively enforced identical to admin registration
+    raw_password = payload.password
+    if not isinstance(raw_password, str) or len(raw_password.encode("utf-8")) > 72:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password too long. Maximum length is 72 bytes."
+        )
+
+    # Hash ONLY the securely validated raw password
+    hashed_password = pwd_ctx.hash(raw_password)
+
     user = User(
         hospital_id=current_user.hospital_id,
         username=str(payload.username).strip().lower(),
         email=str(payload.email).strip().lower() if payload.email else None,
-        password_hash=pwd_ctx.hash(payload.password),
+        password_hash=hashed_password,
         role=payload.role,
         full_name=str(payload.full_name).strip() if payload.full_name else None,
     )
