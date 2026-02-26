@@ -66,6 +66,13 @@ async def register_hospital(payload: HospitalCreate, db: AsyncSession = Depends(
     if payload.register_secret != settings.register_secret:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid register secret")
 
+    # Validate password byte length for bcrypt (max 72 bytes)
+    if len(payload.admin_password.encode("utf-8")) > 72:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password too long. Maximum length is 72 bytes."
+        )
+
     # Check duplicate hospital_id
     existing = await db.execute(select(Hospital).where(Hospital.hospital_id == payload.hospital_id))
     if existing.scalar_one_or_none():
