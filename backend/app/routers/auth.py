@@ -58,6 +58,8 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
     )
 
 
+from sqlalchemy.exc import IntegrityError
+
 @router.post("/register-hospital", status_code=status.HTTP_201_CREATED)
 async def register_hospital(payload: HospitalCreate, db: AsyncSession = Depends(get_db)):
     # Guard with bootstrap secret
@@ -69,26 +71,44 @@ async def register_hospital(payload: HospitalCreate, db: AsyncSession = Depends(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Hospital ID already exists")
 
-    # Create hospital
-    hospital = Hospital(
-        hospital_id=payload.hospital_id,
-        name=payload.name,
-        email=payload.email,
-        address=payload.address,
-    )
-    db.add(hospital)
-    await db.flush()
+    try:
+        # Create hospital
+        hospital = Hospital(
+            hospital_id=payload.hospital_id,
+            name=payload.name,
+            email=payload.email,
+            address=payload.address,
+        )
+        db.add(hospital)
+        await db.flush()
 
-    # Create admin user
-    admin = User(
-        hospital_id=hospital.id,
-        username=payload.admin_username,
-        email=payload.email,
-        password_hash=pwd_ctx.hash(payload.admin_password),
-        role="admin",
-        full_name=payload.admin_full_name or "Administrator",
-    )
-    db.add(admin)
-    await db.commit()
+        # Create admin user
+        admin = User(
+            hospital_id=hospital.id,
+            username=payload.admin_username,
+            email=payload.email,
+            password_hash=pwd_ctx.hash(payload.admin_password),
+            role="admin",
+            full_name=payload.admin_full_name or "Administrator",
+        )
+        db.add(admin)
+        await db.commit()
+        
+        # Ensure instances are refreshed to be stored successfully and fully updated with DB defaults
+        await db.refresh(hospital)
+        await db.refresh(admin)
+
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A record with these details already exists (check email or username)."
+        )
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred during registration: {str(e)}"
+        )
 
     return {"message": f"Hospital {payload.hospital_id} registered successfully", "hospital_id": payload.hospital_id}
