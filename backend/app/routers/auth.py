@@ -69,11 +69,11 @@ async def register_hospital(payload: HospitalCreate, db: AsyncSession = Depends(
     # Explicitly extract the raw password to prevent accidental object hashing
     raw_password = payload.admin_password
 
-    # Validate type
-    if not isinstance(raw_password, str):
+    # Validate type to ensure we are strictly hashing a string, not None or a dict
+    if raw_password is None or not isinstance(raw_password, str):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid password type"
+            detail="Invalid password type. Ensure 'admin_password' is included as a string."
         )
 
     # Validate length manually (bcrypt 72-byte limit)
@@ -83,20 +83,20 @@ async def register_hospital(payload: HospitalCreate, db: AsyncSession = Depends(
             detail="Password too long. Maximum length is 72 bytes."
         )
 
-    # Hash the password explicitly and securely
-    hashed_password = pwd_ctx.hash(raw_password)
-
     # Check duplicate hospital_id
     existing = await db.execute(select(Hospital).where(Hospital.hospital_id == payload.hospital_id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Hospital ID already exists")
 
     try:
+        # Hash ONLY the raw password explicitly and securely
+        hashed_password = pwd_ctx.hash(raw_password)
+
         # Create hospital
         hospital = Hospital(
             hospital_id=payload.hospital_id,
             name=payload.name,
-            email=payload.email,
+            email=str(payload.email),  # Safe cast for Pydantic v2 EmailStr
             address=payload.address,
         )
         db.add(hospital)
@@ -106,7 +106,7 @@ async def register_hospital(payload: HospitalCreate, db: AsyncSession = Depends(
         admin = User(
             hospital_id=hospital.id,
             username=payload.admin_username,
-            email=payload.email,
+            email=str(payload.email),
             password_hash=hashed_password,
             role="admin",
             full_name=payload.admin_full_name or "Administrator",
@@ -126,9 +126,10 @@ async def register_hospital(payload: HospitalCreate, db: AsyncSession = Depends(
         )
     except Exception as e:
         await db.rollback()
+        # Fallback error returning cleanly formatted JSON to avoid raw 500 output
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred during registration: {str(e)}"
+            detail=f"An unexpected server error occurred during registration. Please verify field formatting."
         )
 
     return {"message": f"Hospital {payload.hospital_id} registered successfully", "hospital_id": payload.hospital_id}
