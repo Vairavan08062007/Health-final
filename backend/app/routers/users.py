@@ -36,11 +36,11 @@ async def create_user(
 
     user = User(
         hospital_id=current_user.hospital_id,
-        username=payload.username,
-        email=payload.email,
+        username=str(payload.username).strip().lower(),
+        email=str(payload.email).strip().lower() if payload.email else None,
         password_hash=pwd_ctx.hash(payload.password),
         role=payload.role,
-        full_name=payload.full_name,
+        full_name=str(payload.full_name).strip() if payload.full_name else None,
     )
     db.add(user)
     await db.commit()
