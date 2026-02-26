@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API = import.meta.env.VITE_API_URL;
+// Ensure standard fallback to Render live URL in case Vercel env overrides fail during Vite build
+const API = import.meta.env.VITE_API_URL || 'https://health-final.onrender.com';
 
 const api = axios.create({
     baseURL: API,
@@ -14,11 +15,13 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
-// On 401, clear auth and redirect to login
+// On 401, clear auth and redirect to login EXCEPT when actively logging in
 api.interceptors.response.use(
     (res) => res,
     (err) => {
-        if (err.response?.status === 401) {
+        // Only force strict redirect if user is not already on the login page
+        // (Prevents destroying login feedback logs mapping to a full page reload)
+        if (err.response?.status === 401 && !window.location.pathname.includes('/login')) {
             localStorage.removeItem('vs_token');
             localStorage.removeItem('vs_user');
             window.location.href = '/login';
