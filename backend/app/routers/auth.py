@@ -17,31 +17,32 @@ pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    # 1. Verify hospital exists
+    # 1. Verify hospital exists (using safe scalar matching and handling space)
     hosp_result = await db.execute(
-        select(Hospital).where(Hospital.hospital_id == payload.hospital_id, Hospital.is_active == True)
+        select(Hospital).where(Hospital.hospital_id == payload.hospital_id.strip())
     )
-    hospital = hosp_result.scalar_one_or_none()
-    if not hospital:
+    hospital = hosp_result.scalars().first()
+    if not hospital or hospital.is_active is False:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     # 2. Find user within this hospital
     user_result = await db.execute(
         select(User).where(
-            User.username == payload.username,
-            User.hospital_id == hospital.id,
-            User.status == True,
+            User.username == payload.username.strip(),
+            User.hospital_id == hospital.id
         )
     )
-    user = user_result.scalar_one_or_none()
-    if not user or not pwd_ctx.verify(payload.password, user.password_hash):
+    user = user_result.scalars().first()
+    
+    # Safely verify user exists, is active, and password matches
+    if not user or user.status is False or not pwd_ctx.verify(payload.password, user.password_hash):
         # Audit failed attempt
         db.add(AuditLog(action="LOGIN_FAILED", details={"username": payload.username, "hospital_id": payload.hospital_id}, ip_address=request.client.host))
         await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    # 3. Update last_login
-    await db.execute(update(User).where(User.id == user.id).values(last_login=datetime.utcnow()))
+    # 3. Safely update last_login on the instance directly
+    user.last_login = datetime.utcnow()
 
     # 4. Audit success
     db.add(AuditLog(user_id=user.id, action="LOGIN_SUCCESS", ip_address=request.client.host))
